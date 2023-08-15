@@ -1,3 +1,0 @@
-/home/liutao/CLionProjects/AppProp/cmake-build-release/CMakeFiles/AppProp.dir
-/home/liutao/CLionProjects/AppProp/cmake-build-release/CMakeFiles/edit_cache.dir
-/home/liutao/CLionProjects/AppProp/cmake-build-release/CMakeFiles/rebuild_cache.dir
