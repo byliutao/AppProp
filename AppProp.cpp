@@ -4,20 +4,44 @@
 
 #include "AppProp.h"
 
+Vec6d AppProp::computeFeatureVector(const Mat &image, int row, int col) {
+    Vec6d featureVector;
+
+    int halfNeighborhood = 3 / 2;
+    int startRow = max(row - halfNeighborhood, 0);
+    int endRow = min(row + halfNeighborhood + 1, image.rows);
+    int startCol = max(col - halfNeighborhood, 0);
+    int endCol = min(col + halfNeighborhood + 1, image.cols);
+
+    // Extract the valid neighborhood around the pixel
+    Mat neighborhood = image(Rect(startCol, startRow, endCol - startCol, endRow - startRow));
+
+    // Calculate average and standard deviation of color in the neighborhood
+    Scalar meanColor = mean(neighborhood);
+    Scalar stddevColor;
+    meanStdDev(neighborhood, meanColor, stddevColor);
+
+    featureVector[0] = meanColor[0];  // L channel
+    featureVector[1] = meanColor[1];  // a channel
+    featureVector[2] = meanColor[2];  // b channel
+    featureVector[3] = stddevColor[0];
+    featureVector[4] = stddevColor[1];
+    featureVector[5] = stddevColor[2];
+
+    return featureVector;
+}
+
 void AppProp::imagePropagating() {
-    Eigen::VectorXd e(_n), g(_n);
-    Eigen::SparseMatrix<double> W(_n, _n), D(_n,_n), D_inv(_n,_n);
-    Eigen::MatrixXd A(_m,_m), A_inv(_m, _m);
-    Eigen::MatrixXd U(_n,_m), U_tran(_n, _m);
+    Eigen::VectorXd g(_n), w(_n), one_n(_n);
+    Eigen::MatrixXd U(_n,_m);
     double lambda;
     int select_pixel_num = 0;
 
 
-    A.setZero();
-    D.setZero();
-    D_inv.setZero();
-    W.setZero();
-    e.setZero();
+    g.setZero();
+    w.setZero();
+    one_n.setOnes();
+    U.setZero();
 
     //calculate Matrix W and vector g
     for(int row = 0; row < _source_img.rows; row++){
@@ -26,17 +50,15 @@ void AppProp::imagePropagating() {
             int index = row*(_source_img.cols) + col;
             if(value > 0){
                 g(index) = _brightness_increase;
-                W.insert(index,index) = 1;
+                w(index) = 1;
                 select_pixel_num++;
             }
             else{
-                g(index) = 0;
-                W.insert(index,index) = 0;
+                g(index) = 1e-18;
+                w(index) = 1e-18;
             }
         }
     }
-    W.finalize();
-
 
     //test g
 #ifdef SHOW_RESULT
@@ -49,45 +71,66 @@ void AppProp::imagePropagating() {
 
     lambda = select_pixel_num * 1.0 / (_height*_width);
 
+    std::vector<int> availableNumbers(_n);
+    for (int i = 0; i < _n; ++i) {
+        availableNumbers[i] = i;
+    }
+
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::shuffle(availableNumbers.begin(), availableNumbers.end(), gen);
+
+    std::vector<int> selectedNumbers(availableNumbers.begin(), availableNumbers.begin() + _m);
+
     //calculate Matrix A and U
     for(int i = 0; i < _n; i++){
         for(int j = 0; j < _m; j++){
-            int pixel_i_row = i % _width;
+            int index_j = selectedNumbers[j];
+//            int index_j = j;
+            int pixel_i_row = i / _width;
             int pixel_i_col = i - pixel_i_row*_width;
-            int pixel_j_row = j % _width;
-            int pixel_j_col = j - pixel_j_row*_width;
-            Vec3b pixel_i = _source_img.at<Vec3b>(pixel_i_row,pixel_i_col);
-            Vec3b pixel_j = _source_img.at<Vec3b>(pixel_j_row,pixel_j_col);
+            int pixel_j_row = index_j / _width;
+            int pixel_j_col = index_j - pixel_j_row*_width;
+            Vec6d feature_i = computeFeatureVector(_source_img, pixel_i_row, pixel_i_col);
+            Vec6d feature_j = computeFeatureVector(_source_img, pixel_j_row, pixel_j_col);
             Vec2i location_i = Vec2i(pixel_i_row,pixel_i_col);
             Vec2i location_j = Vec2i(pixel_j_row, pixel_j_col);
-
-            double z_ij = exp(-norm(pixel_i-pixel_j,NORM_L2)/_alpha_a)*exp(-norm(location_i-location_j,NORM_L2)/_alpha_s);
-            if(i < _m){
-                A(i,j) = z_ij;
-                U(i, j) = z_ij;
+            double z_ij = exp(-norm(feature_i-feature_j,NORM_L2SQR)/_alpha_a)*exp(-norm(location_i-location_j,NORM_L2SQR)/_alpha_s);
+            if(z_ij == 0) {
+                z_ij = 1e-18;
             }
-            else{
-                U(i,j) = z_ij;
-            }
+            U(i,j) = z_ij;
         }
     }
-    A_inv = A.inverse();
-    U_tran = U.transpose();
 
-    //calculate Matrix D
-    Eigen::VectorXd oneVector(_n), valueVector(_n);
-    oneVector.setOnes();
-    valueVector = (U * A);
-
-    valueVector = (((1.0 / (2 * lambda)) * U * A_inv * U_tran * W) + U * A_inv * U_tran) * oneVector;
-    for(int i = 0; i < _n; i++){
-        D.insert(i,i) = valueVector(i);
+    MatrixXd U_tran = U.transpose();
+    MatrixXd A = U.block(0, 0, _m, _m);
+    MatrixXd A_inv = A.inverse();
+//    for(int i = 0; i < _m; i++){
+//        cout<<A_inv(_m,_m)<<endl;
+//    }
+    VectorXd a = U * (A_inv * (U_tran * (w.asDiagonal() * one_n))); // U A^-1 U^T M W 1_n
+    VectorXd b = U * (A_inv * (U_tran * one_n));                    // U A^-1 U^T M 1_n
+//    cout<<a(1)<<" "<<b(1)<<" AAA"<<endl;
+//    exit(0);
+    VectorXd d_inv = a / lambda / 2 + b;
+    for (int i = 0; i < _n; i++){
+        d_inv(i) = 1.0 / d_inv(i);
+//        cout<<d_inv(i)<<endl;
     }
-    D.finalize();
-    D_inv = D;
 
-    //calculate e
-    e = (1.0 / (2 * lambda)) * (D_inv - D_inv * U * (-A + U_tran * D_inv * U) * U_tran * D_inv) * (U * A_inv * U_tran) * W * g;
+    VectorXd c = U * (A_inv * (U_tran * (one_n.asDiagonal() * (w.asDiagonal() * g)))); // U A^-1 U^T M W g
+    MatrixXd U_TD_1 = U_tran * d_inv.asDiagonal();                                  // U^T D^-1
+    MatrixXd D_1U = d_inv.asDiagonal() * U;                                      // D^-1 U
+    MatrixXd mid = (U_TD_1 * U - A).inverse();                                 // (-A + U^T D^-1 U)^-1
+
+    VectorXd e = d_inv.asDiagonal() * c - D_1U * (mid * (U_TD_1 * c));
+    for (int i = 0; i < _n; i++)
+    {
+        e(i) /= one_n(i);
+    }
+
+    e /= lambda * 2;
 
 #ifdef SHOW_RESULT
     Mat e_mask;
@@ -145,7 +188,7 @@ void AppProp::convertVectorToMask(const Eigen::VectorXd &vector, Mat &mask) cons
     mask = Mat(_source_img.size(), CV_8UC1);
     for(int row = 0; row < _height; row++){
         for(int col = 0; col < _width; col++){
-            mask.at<uchar>(row,col) = (uchar)vector(row*_width + col);
+            mask.at<uchar>(row,col) = (uchar)vector(row*_width + col) * 2.55;
         }
     }
 }

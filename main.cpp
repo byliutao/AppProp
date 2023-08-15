@@ -39,7 +39,7 @@ void onMouse(int event, int x, int y, int flags, void* userdata) {
 int main() {
     // 读取图像
     image = imread("/home/liutao/CLionProjects/AppProp/data/build.png");
-    resize(image,image,Size(image.cols/2,image.rows/2));
+    resize(image,image,Size(image.cols,image.rows));
     if (image.empty()) {
         std::cerr << "Error: Could not read the image." << std::endl;
         return -1;

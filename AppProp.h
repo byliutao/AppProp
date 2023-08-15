@@ -11,16 +11,18 @@
 #include <opencv2/opencv.hpp>
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
-#include <math.h>
+#include <random>
+#include <algorithm>
 
 using namespace std;
 using namespace cv;
+using namespace Eigen;
 
 class AppProp {
 private:
-    const int _m = 20;
+    const int _m = 100;
     const double _alpha_a = 500;
-    const double _alpha_s = 0.5;
+    const double _alpha_s = 10;
     Mat _source_img;
     Mat _user_select_mask;
     Mat _initial_edit_img;
@@ -33,6 +35,7 @@ private:
     void imagePropagating();
     void renderImageWithMask();
     void convertVectorToMask(const Eigen::VectorXd &vector, Mat &mask) const;
+    static Vec6d computeFeatureVector(const Mat &image, int row, int col);
 public:
     AppProp(Mat &source_img, Mat &user_select_mask, int brightness_increase);
 
