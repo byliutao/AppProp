@@ -21,10 +21,11 @@ using namespace Eigen;
 class AppProp {
 private:
     const int _m = 100;
-    const double _alpha_a = 500;
+    const double _alpha_a = 50;
     const double _alpha_s = 100;
     Mat _source_img;
     Mat _user_select_mask;
+    Mat _final_edit_mask;
     Mat _initial_edit_img;
     Mat _final_edit_img;
     int _brightness_increase;

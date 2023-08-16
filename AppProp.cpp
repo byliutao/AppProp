@@ -129,6 +129,7 @@ void AppProp::imagePropagating() {
     VectorXd e = d_inv.asDiagonal() * c - D_1U * (mid * (U_TD_1 * c));
     e /= lambda * 2;
 
+    convertVectorToMask(e,_final_edit_mask);
 #ifdef SHOW_RESULT
     Mat e_mask;
     convertVectorToMask(e,e_mask);
@@ -139,7 +140,20 @@ void AppProp::imagePropagating() {
 }
 
 void AppProp::renderImageWithMask() {
-
+    for(int row = 0; row < _source_img.rows; row++){
+        for(int col = 0; col < _source_img.cols; col++){
+            cout<<(int)_source_img.at<Vec3b>(row,col)[0]<<endl;
+            _final_edit_img.at<Vec3b>(row,col) = _source_img.at<Vec3b>(row,col);
+            _final_edit_img.at<Vec3b>(row,col)[0] += _final_edit_mask.at<uchar>(row,col);
+        }
+    }
+#ifdef SHOW_RESULT
+    Mat show;
+    cvtColor(_final_edit_img,show,COLOR_Lab2BGR);
+    namedWindow("final_edit_img",WINDOW_NORMAL);
+    imshow("final_edit_img",show);
+    waitKey(0);
+#endif
 }
 
 void AppProp::initialEditImage() {
